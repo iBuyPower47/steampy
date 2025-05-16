@@ -5,6 +5,7 @@ from http import HTTPStatus
 
 from requests import Session
 
+from bs4 import BeautifulSoup
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import ApiException, TooManyRequests
 from steampy.models import Currency, SteamUrl, GameOptions
@@ -15,6 +16,7 @@ from steampy.utils import (
     merge_items_with_descriptions_from_listing,
     get_market_sell_listings_from_api,
     login_required,
+    get_buy_orders_from_node,
 )
 
 
@@ -27,11 +29,12 @@ class SteamMarket:
 
     def _set_login_executed(self, steamguard: dict, session_id: str) -> None:
         self._steam_guard = steamguard
+        self._steam_id = self._steam_guard['Session']['Steamid']
         self._session_id = session_id
         self.was_login_executed = True
 
     def fetch_price(
-        self, item_hash_name: str, game: GameOptions, currency: Currency = Currency.USD, country='PL'
+            self, item_hash_name: str, game: GameOptions, currency: Currency = Currency.USD, country='PL'
     ) -> dict:
         url = f'{SteamUrl.COMMUNITY_URL}/market/priceoverview/'
         params = {
@@ -120,7 +123,7 @@ class SteamMarket:
             'amount': 1,
             'price': money_to_receive,
         }
-        headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/profiles/{self._steam_guard["steamid"]}/inventory'}
+        headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/profiles/{self._steam_id}/inventory'}
 
         response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/sellitem/', data, headers=headers).json()
         has_pending_confirmation = 'pending confirmation' in response.get('message', '')
@@ -131,12 +134,12 @@ class SteamMarket:
 
     @login_required
     def create_buy_order(
-        self,
-        market_name: str,
-        price_single_item: str,
-        quantity: int,
-        game: GameOptions,
-        currency: Currency = Currency.USD,
+            self,
+            market_name: str,
+            price_single_item: str,
+            quantity: int,
+            game: GameOptions,
+            currency: Currency = Currency.USD,
     ) -> dict:
         data = {
             'sessionid': self._session_id,
@@ -161,16 +164,16 @@ class SteamMarket:
 
     @login_required
     def buy_item(
-        self,
-        market_name: str,
-        market_id: str,
-        price: int,
-        fee: int,
-        game: GameOptions,
-        currency: Currency = Currency.USD,
+            self,
+            market_name: str,
+            market_id: str,
+            price: int,
+            fee: int,
+            game: GameOptions = GameOptions.CS,
+            currency: Currency = Currency.USD,
     ) -> dict:
         data = {
-            'sessionid': self._session_id,
+            'sessionid': self._session.cookies.get_dict("steamcommunity.com")['sessionid'],
             'currency': currency.value,
             'subtotal': price - fee,
             'fee': fee,
@@ -183,14 +186,6 @@ class SteamMarket:
         response = self._session.post(
             f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, headers=headers
         ).json()
-
-        try:
-            if (success := response['wallet_info']['success']) != 1:
-                raise ApiException(
-                    f'There was a problem buying this item. Are you using the right currency? success: {success}'
-                )
-        except Exception:
-            raise ApiException(f'There was a problem buying this item. Message: {response.get("message")}')
 
         return response
 
@@ -217,6 +212,11 @@ class SteamMarket:
 
     def _confirm_sell_listing(self, asset_id: str) -> dict:
         con_executor = ConfirmationExecutor(
-            self._steam_guard['identity_secret'], self._steam_guard['steamid'], self._session
+            self._steam_guard['identity_secret'], self._steam_id, self._session
         )
         return con_executor.confirm_sell_listing(asset_id)
+
+    def get_my_buy_order(self):
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market')
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return get_buy_orders_from_node(soup)
