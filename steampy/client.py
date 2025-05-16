@@ -164,7 +164,7 @@ class SteamClient:
 
     @login_required
     def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000) -> dict:
-        steam_id = self.steam_guard['Session']['Steamid']
+        steam_id = self.steam_guard['Session']['SteamID']
         return self.get_partner_inventory(steam_id, game, merge, count)
 
     @login_required
