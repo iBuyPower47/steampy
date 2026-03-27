@@ -13,9 +13,12 @@ from steampy.login import InvalidCredentials
 
 
 class Confirmation:
-    def __init__(self, data_confid, nonce):
+    def __init__(self, data_confid, nonce, creator_id=None, int_type=None, type_name=None) -> None:
         self.data_confid = data_confid
         self.nonce = nonce
+        self.creator_id = creator_id
+        self.int_type = int_type
+        self.type_name = type_name
 
 
 class Tag(enum.Enum):
@@ -122,3 +125,33 @@ class ConfirmationExecutor:
         soup = BeautifulSoup(confirmation_details_page, 'html.parser')
         full_offer_id = soup.select('.tradeoffer')[0]['id']
         return full_offer_id.split('_')[1]
+
+    def send_buy_allow_request(self, buy_offer_id: str) -> dict:
+        confirmations = self._get_confirmations()
+        confirmation = self._select_buy_item_confirmation(confirmations, buy_offer_id)
+        return self._send_confirmation(confirmation)
+
+    def _get_confirmations(self) -> list[Confirmation]:
+        confirmations = []
+        confirmations_page = self._fetch_confirmations_page()
+        if confirmations_page.status_code == HTTPStatus.OK:
+            confirmations_json = json.loads(confirmations_page.text)
+            for conf in confirmations_json['conf']:
+                data_confid = conf['id']
+                nonce = conf['nonce']
+                creator_id = conf.get('creator_id')
+                int_type = conf.get('type')
+                type_name = conf.get('type_name')
+                confirmations.append(Confirmation(data_confid, nonce, creator_id, int_type, type_name))
+
+            return confirmations
+        raise ConfirmationExpected
+
+    def _select_buy_item_confirmation(self, confirmations: list[Confirmation], buy_offer_id: str) -> Confirmation:
+        for confirmation in confirmations:
+            if confirmation.int_type != 12:
+                continue
+            confirmation_id = confirmation.creator_id
+            if str(confirmation_id) == str(buy_offer_id):
+                return confirmation
+        raise ConfirmationExpected

@@ -119,8 +119,7 @@ class SteamClient:
             print(decoded_cookie_value)
             raise ValueError('Access token not found in steamLoginSecure cookie')
 
-        access_token = access_token_parts[1]
-        self._access_token = access_token
+        self._access_token = access_token_parts[1]
 
     @login_required
     def logout(self) -> None:
@@ -277,6 +276,8 @@ class SteamClient:
             raise ApiException(f'Invalid trade offer state: {trade_offer_state.name} ({trade_offer_state.value})')
 
         partner = self._fetch_trade_partner_id(trade_offer_id)
+        if not partner:
+            raise ApiException(f'未获取到交易对象信息，请检查订单！')
         session_id = self._session.cookies.get_dict("steamcommunity.com")['sessionid']
         accept_url = f'{SteamUrl.COMMUNITY_URL}/tradeoffer/{trade_offer_id}/accept'
         params = {
@@ -288,7 +289,7 @@ class SteamClient:
         }
         headers = {'Referer': self._get_trade_offer_url(trade_offer_id)}
 
-        response = self._session.post(accept_url, data=params, headers=headers).json()
+        response = self._session.post(accept_url, data=params, headers=headers, timeout=30).json()
         if response.get('needs_mobile_confirmation', False):
             return self._confirm_transaction(trade_offer_id)
 

@@ -173,7 +173,7 @@ class SteamMarket:
             currency: Currency = Currency.USD,
     ) -> dict:
         data = {
-            'sessionid': self._session.cookies.get_dict("steamcommunity.com")['sessionid'],
+            'sessionid': self._session_id,
             'currency': currency.value,
             'subtotal': price - fee,
             'fee': fee,
@@ -186,7 +186,16 @@ class SteamMarket:
         response = self._session.post(
             f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, headers=headers
         ).json()
-
+        if response.get('need_confirmation'):
+            confirmation_id = response['confirmation']['confirmation_id']
+            confirmation_executor = ConfirmationExecutor(
+                self._steam_guard['identity_secret'], self._steam_guard['Session']['SteamID'], self._session,
+            )
+            confirmation_executor.send_buy_allow_request(confirmation_id)
+            data['confirmation'] = confirmation_id
+            response = self._session.post(
+                f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, headers=headers
+            ).json()
         return response
 
     @login_required
