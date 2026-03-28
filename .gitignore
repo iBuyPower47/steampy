@@ -10,3 +10,6 @@ dist
 debug.*
 deploy.sh
 secrets
+*.maFile
+CLAUDE.md
+.claude

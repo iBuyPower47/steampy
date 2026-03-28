@@ -26,6 +26,7 @@ from steampy.utils import (
     get_key_value_from_url,
     ping_proxy,
     login_required,
+    check_error,
 )
 
 
@@ -38,7 +39,7 @@ class SteamClient:
             steam_guard: str = None,
             login_cookies: dict = None,
             proxies: dict = None,
-    ) -> None:
+    ):
         self._api_key = api_key
         self._session = requests.Session()
 
@@ -54,6 +55,9 @@ class SteamClient:
         self.was_login_executed = False
         self.username = username
         self._password = password
+        self.steamid = None
+        self.refresh_token = None
+        self._access_token = None
         self.market = SteamMarket(self._session)
 
         if login_cookies:
@@ -71,6 +75,7 @@ class SteamClient:
 
         return proxies
 
+
     def set_login_cookies(self, cookies: dict) -> None:
         self._session.cookies.update(cookies)
         self.was_login_executed = True
@@ -78,14 +83,15 @@ class SteamClient:
         if self.steam_guard is None:
             self.steam_guard = {'steamid': str(self.get_steam_id())}
 
-        self.market._set_login_executed(self.steam_guard, self._get_session_id())
+        self.market._set_login_executed(self.steam_guard, self._get_session_id(), self.steamid)
 
     @login_required
     def get_steam_id(self) -> int:
         url = SteamUrl.COMMUNITY_URL
         response = self._session.get(url)
         if steam_id := re.search(r'g_steamID = "(\d+)";', response.text):
-            return int(steam_id.group(1))
+            self.steamid = int(steam_id.group(1))
+            return self.steamid
         else:
             raise ValueError(f'Invalid steam_id: {steam_id}')
 
@@ -107,10 +113,9 @@ class SteamClient:
             return  # Session is alive, no need to login again
 
         self._session.cookies.set('steamRememberLogin', 'true')
-        LoginExecutor(self.username, self._password, self.steam_guard['shared_secret'], self._session).login()
+        login_executor = LoginExecutor(self.username, self._password, self.steam_guard['shared_secret'], self._session)
+        login_executor.login()
         self.was_login_executed = True
-        self.market._set_login_executed(self.steam_guard, self._get_session_id())
-
         steam_login_secure_cookies = [cookie for cookie in self._session.cookies if cookie.name == 'steamLoginSecure']
         cookie_value = steam_login_secure_cookies[0].value
         decoded_cookie_value = unquote(cookie_value)
@@ -120,6 +125,9 @@ class SteamClient:
             raise ValueError('Access token not found in steamLoginSecure cookie')
 
         self._access_token = access_token_parts[1]
+        self.steamid = access_token_parts[0]
+        self.refresh_token = login_executor.refresh_token
+        self.market._set_login_executed(self.steam_guard, self._get_session_id(), self.steamid)
 
     @login_required
     def logout(self) -> None:
@@ -132,6 +140,74 @@ class SteamClient:
 
         self.was_login_executed = False
 
+    def login_by_refresh_token(self, refresh_token: str, steamid: str, steam_guard: str = None) -> bool:
+        if steam_guard is not None:
+            self.steam_guard_string = steam_guard
+            self.steam_guard = guard.load_steam_guard(steam_guard)
+
+        self.steamid = steamid
+        self.refresh_token = refresh_token
+
+        url = f'{SteamUrl.API_URL}/IAuthenticationService/GenerateAccessTokenForApp/v1/'
+        data = {'steamid': steamid, 'refresh_token': refresh_token}
+        response = self._session.post(url, data=data, allow_redirects=False, timeout=20)
+        while response.status_code == 302:
+            response = self._session.post(
+                response.headers['Location'], data=data, allow_redirects=False, timeout=20
+            )
+
+        resp_json = response.json()
+        access_token = resp_json.get('response', {}).get('access_token')
+        if not access_token:
+            return False
+
+        steam_login_secure = f'{steamid}%7C%7C{access_token}'
+        self._session.cookies.set('steamLoginSecure', steam_login_secure, domain='steamcommunity.com')
+        self._session.cookies.set('steamLoginSecure', steam_login_secure, domain='store.steampowered.com')
+        self._access_token = access_token
+        self.was_login_executed = True
+
+        self._session.get(f'{SteamUrl.COMMUNITY_URL}/my', timeout=15)
+
+        if self.steam_guard is not None:
+            try:
+                self.market._set_login_executed(self.steam_guard, self._get_session_id(), self.steamid)
+            except Exception:
+                pass
+
+        return self.is_access_token_valid()
+
+    def update_access_token(self) -> bool:
+        if not self.refresh_token or not self.steamid:
+            return False
+        try:
+            url = f'{SteamUrl.API_URL}/IAuthenticationService/GenerateAccessTokenForApp/v1/'
+            data = {'steamid': self.steamid, 'refresh_token': self.refresh_token}
+            response = self._session.post(url, data=data, allow_redirects=False, timeout=20)
+            while response.status_code == 302:
+                response = self._session.post(
+                    response.headers['Location'], data=data, allow_redirects=False, timeout=20
+                )
+            access_token = response.json()['response']['access_token']
+            steam_login_secure = f'{self.steamid}%7C%7C{access_token}'
+            self._session.cookies.set('steamLoginSecure', steam_login_secure, domain='steamcommunity.com')
+            self._session.cookies.set('steamLoginSecure', steam_login_secure, domain='store.steampowered.com')
+            self._access_token = access_token
+            return True
+        except Exception:
+            return False
+
+    def is_access_token_valid(self) -> bool:
+        try:
+            resp = self._session.get(
+                f'{SteamUrl.COMMUNITY_URL}/login/home/?goto=%2Fmy%2Fgoto',
+                timeout=20,
+                allow_redirects=False,
+            )
+            return resp.status_code == 302
+        except Exception:
+            return False
+
     def __enter__(self):
         self.login(self.username, self._password, self.steam_guard_string)
         return self
@@ -141,9 +217,11 @@ class SteamClient:
 
     @login_required
     def is_session_alive(self) -> bool:
-        steam_login = self.username
-        main_page_response = self._session.get(SteamUrl.COMMUNITY_URL)
-        return steam_login.lower() in main_page_response.text.lower()
+        if self.is_access_token_valid():
+            return True
+        if self.update_access_token():
+            return self.is_access_token_valid()
+        return False
 
     def api_call(
             self, method: str, interface: str, api_method: str, version: str, params: dict = None
@@ -163,8 +241,7 @@ class SteamClient:
 
     @login_required
     def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000) -> dict:
-        steam_id = self.steam_guard['Session']['SteamID']
-        return self.get_partner_inventory(steam_id, game, merge, count)
+        return self.get_partner_inventory(self.steamid, game, merge, count)
 
     @login_required
     def get_partner_inventory(
@@ -186,9 +263,9 @@ class SteamClient:
         params = {'key': self._api_key}
         return self.api_call('GET', 'IEconService', 'GetTradeOffersSummary', 'v1', params).json()
 
-    def get_trade_offers(self, merge: bool = True, sent: int = 1, received: int = 1, use_webtoken=False) -> dict:
+    def get_trade_offers(self, merge: bool = True, sent: int = 1, received: int = 1) -> dict:
         params = {
-            'key' if not use_webtoken else 'access_token': self._api_key if not use_webtoken else self._access_token,
+            'access_token': self._access_token,
             'get_sent_offers': sent,
             'get_received_offers': received,
             'get_descriptions': 1,
@@ -304,11 +381,11 @@ class SteamClient:
 
         return text_between(offer_response_text, "var g_ulTradePartnerSteamID = '", "';")
 
-    def _confirm_transaction(self, trade_offer_id: str) -> dict:
+    def _confirm_transaction(self, trade_offer_id: str, match_end: bool = False) -> dict:
         confirmation_executor = ConfirmationExecutor(
-            self.steam_guard['identity_secret'], self.steam_guard['Session']['SteamID'], self._session
+            self.steam_guard['identity_secret'], self.steamid, self._session
         )
-        return confirmation_executor.send_trade_allow_request(trade_offer_id)
+        return confirmation_executor.send_trade_allow_request(trade_offer_id, match_end)
 
     def decline_trade_offer(self, trade_offer_id: str) -> dict:
         url = f'https://steamcommunity.com/tradeoffer/{trade_offer_id}/decline'

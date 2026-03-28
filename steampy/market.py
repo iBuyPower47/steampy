@@ -27,9 +27,9 @@ class SteamMarket:
         self._session_id = None
         self.was_login_executed = False
 
-    def _set_login_executed(self, steamguard: dict, session_id: str) -> None:
+    def _set_login_executed(self, steamguard: dict, session_id: str, steam_id: str) -> None:
         self._steam_guard = steamguard
-        self._steam_id = self._steam_guard['Session']['SteamID']
+        self._steam_id = steam_id
         self._session_id = session_id
         self.was_login_executed = True
 
@@ -189,7 +189,7 @@ class SteamMarket:
         if response.get('need_confirmation'):
             confirmation_id = response['confirmation']['confirmation_id']
             confirmation_executor = ConfirmationExecutor(
-                self._steam_guard['identity_secret'], self._steam_guard['Session']['SteamID'], self._session,
+                self._steam_guard['identity_secret'], self._steam_id, self._session,
             )
             confirmation_executor.send_buy_allow_request(confirmation_id)
             data['confirmation'] = confirmation_id

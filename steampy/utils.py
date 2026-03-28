@@ -12,7 +12,23 @@ from bs4 import BeautifulSoup, Tag
 from requests.structures import CaseInsensitiveDict
 
 from steampy.models import GameOptions
-from steampy.exceptions import ProxyConnectionError, LoginRequired
+from steampy.exceptions import ProxyConnectionError, LoginRequired, SteamError
+from steampy.steam_error_codes import STEAM_ERROR_CODES
+
+
+def check_error(resp: requests.Response, ignore_error_num: list = None) -> None:
+    error = resp.headers.get('X-eresult')
+    if error is not None:
+        check_error_id(int(error), ignore_error_num)
+
+
+def check_error_id(error_id: int, ignore_error_num: list = None) -> None:
+    if ignore_error_num is not None and error_id in ignore_error_num:
+        return
+    if error_id in (1, 22):
+        return
+    if error_id in STEAM_ERROR_CODES:
+        raise SteamError(error_code=error_id)
 
 
 def login_required(func):

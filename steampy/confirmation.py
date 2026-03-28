@@ -36,14 +36,24 @@ class ConfirmationExecutor:
         self._identity_secret = identity_secret
         self._session = session
 
-    def send_trade_allow_request(self, trade_offer_id: str) -> dict:
-        confirmations = self._get_confirmations()
-        confirmation = self._select_trade_offer_confirmation(confirmations, trade_offer_id)
-        return self._send_confirmation(confirmation)
+    def send_trade_allow_request(self, trade_offer_id: str, match_end: bool = False) -> dict:
+        for _ in range(3):
+            confirmations = self._get_confirmations()
+            try:
+                confirmation = self._select_trade_offer_confirmation(confirmations, trade_offer_id, match_end)
+                return self._send_confirmation(confirmation)
+            except ConfirmationExpected:
+                time.sleep(3)
+        raise ConfirmationExpected
 
     def confirm_sell_listing(self, asset_id: str) -> dict:
         confirmations = self._get_confirmations()
         confirmation = self._select_sell_listing_confirmation(confirmations, asset_id)
+        return self._send_confirmation(confirmation)
+
+    def send_buy_allow_request(self, buy_offer_id: str) -> dict:
+        confirmations = self._get_confirmations()
+        confirmation = self._select_buy_item_confirmation(confirmations, buy_offer_id)
         return self._send_confirmation(confirmation)
 
     def _send_confirmation(self, confirmation: Confirmation) -> dict:
@@ -56,17 +66,25 @@ class ConfirmationExecutor:
         return self._session.get(f'{self.CONF_URL}/ajaxop', params=params, headers=headers).json()
 
     def _get_confirmations(self) -> List[Confirmation]:
-        confirmations = []
-        confirmations_page = self._fetch_confirmations_page()
-        if confirmations_page.status_code == HTTPStatus.OK:
-            confirmations_json = json.loads(confirmations_page.text)
-            for conf in confirmations_json['conf']:
-                data_confid = conf['id']
-                nonce = conf['nonce']
-                confirmations.append(Confirmation(data_confid, nonce))
-            return confirmations
-        else:
-            raise ConfirmationExpected
+        for _ in range(5):
+            confirmations_page = self._fetch_confirmations_page()
+            if confirmations_page.status_code == HTTPStatus.OK:
+                confirmations_json = json.loads(confirmations_page.text)
+                if 'conf' not in confirmations_json:
+                    time.sleep(1)
+                    continue
+                confirmations = []
+                for conf in confirmations_json['conf']:
+                    confirmations.append(Confirmation(
+                        data_confid=conf['id'],
+                        nonce=conf['nonce'],
+                        creator_id=conf.get('creator_id'),
+                        int_type=conf.get('type'),
+                        type_name=conf.get('type_name'),
+                    ))
+                return confirmations
+            time.sleep(1)
+        raise ConfirmationExpected
 
     def _fetch_confirmations_page(self) -> requests.Response:
         tag = Tag.CONF.value
@@ -96,11 +114,17 @@ class ConfirmationExecutor:
             'tag': tag_string,
         }
 
-    def _select_trade_offer_confirmation(self, confirmations: List[Confirmation], trade_offer_id: str) -> Confirmation:
+    def _select_trade_offer_confirmation(
+        self, confirmations: List[Confirmation], trade_offer_id: str, match_end: bool = False
+    ) -> Confirmation:
         for confirmation in confirmations:
             confirmation_details_page = self._fetch_confirmation_details_page(confirmation)
             confirmation_id = self._get_confirmation_trade_offer_id(confirmation_details_page)
+            if not confirmation_id or not confirmation_id.isdigit():
+                confirmation_id = str(confirmation.creator_id) if confirmation.creator_id else ''
             if confirmation_id == trade_offer_id:
+                return confirmation
+            if match_end and trade_offer_id.endswith(confirmation_id):
                 return confirmation
         raise ConfirmationExpected
 
@@ -109,6 +133,14 @@ class ConfirmationExecutor:
             confirmation_details_page = self._fetch_confirmation_details_page(confirmation)
             confirmation_id = self._get_confirmation_sell_listing_id(confirmation_details_page)
             if confirmation_id == asset_id:
+                return confirmation
+        raise ConfirmationExpected
+
+    def _select_buy_item_confirmation(self, confirmations: List[Confirmation], buy_offer_id: str) -> Confirmation:
+        for confirmation in confirmations:
+            if confirmation.int_type != 12:
+                continue
+            if str(confirmation.creator_id) == str(buy_offer_id):
                 return confirmation
         raise ConfirmationExpected
 
@@ -123,35 +155,8 @@ class ConfirmationExecutor:
     @staticmethod
     def _get_confirmation_trade_offer_id(confirmation_details_page: str) -> str:
         soup = BeautifulSoup(confirmation_details_page, 'html.parser')
-        full_offer_id = soup.select('.tradeoffer')[0]['id']
-        return full_offer_id.split('_')[1]
-
-    def send_buy_allow_request(self, buy_offer_id: str) -> dict:
-        confirmations = self._get_confirmations()
-        confirmation = self._select_buy_item_confirmation(confirmations, buy_offer_id)
-        return self._send_confirmation(confirmation)
-
-    def _get_confirmations(self) -> list[Confirmation]:
-        confirmations = []
-        confirmations_page = self._fetch_confirmations_page()
-        if confirmations_page.status_code == HTTPStatus.OK:
-            confirmations_json = json.loads(confirmations_page.text)
-            for conf in confirmations_json['conf']:
-                data_confid = conf['id']
-                nonce = conf['nonce']
-                creator_id = conf.get('creator_id')
-                int_type = conf.get('type')
-                type_name = conf.get('type_name')
-                confirmations.append(Confirmation(data_confid, nonce, creator_id, int_type, type_name))
-
-            return confirmations
-        raise ConfirmationExpected
-
-    def _select_buy_item_confirmation(self, confirmations: list[Confirmation], buy_offer_id: str) -> Confirmation:
-        for confirmation in confirmations:
-            if confirmation.int_type != 12:
-                continue
-            confirmation_id = confirmation.creator_id
-            if str(confirmation_id) == str(buy_offer_id):
-                return confirmation
-        raise ConfirmationExpected
+        trade_offer = soup.select('.tradeoffer')
+        if trade_offer:
+            full_offer_id = trade_offer[0]['id']
+            return full_offer_id.split('_')[1]
+        return ''
