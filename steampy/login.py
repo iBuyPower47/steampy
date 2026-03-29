@@ -1,3 +1,5 @@
+import time
+
 from http import HTTPStatus
 from base64 import b64encode
 
@@ -144,8 +146,13 @@ class LoginExecutor:
 
     def _pool_sessions_steam(self, client_id: str, request_id: str) -> None:
         pool_data = {'client_id': client_id, 'request_id': request_id}
-        response = self._api_call('POST', 'IAuthenticationService', 'PollAuthSessionStatus', params=pool_data)
-        self.refresh_token = response.json()['response']['refresh_token']
+        for i in range(3):
+            try:
+                response = self._api_call('POST', 'IAuthenticationService', 'PollAuthSessionStatus', params=pool_data)
+                self.refresh_token = response.json()['response']['refresh_token']
+                break
+            except Exception as e:
+                time.sleep(5)
 
     def _finalize_login(self) -> Response:
         sessionid = self.session.cookies['sessionid']
