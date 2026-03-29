@@ -154,12 +154,19 @@ class SteamMarket:
         }
 
         response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data, headers=headers).json()
-
+        if response.get('need_confirmation'):
+            confirmation_id = response['confirmation']['confirmation_id']
+            confirmation_executor = ConfirmationExecutor(
+                self._steam_guard['identity_secret'], self._steam_id, self._session,
+            )
+            confirmation_executor.send_buy_allow_request(confirmation_id)
+            data['confirmation'] = confirmation_id
+            response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data,
+                                          headers=headers).json()
         if (success := response.get('success')) != 1:
             raise ApiException(
                 f'There was a problem creating the order. Are you using the right currency? success: {success}'
             )
-
         return response
 
     @login_required
