@@ -19,6 +19,8 @@ setup(
     keywords=['steam', 'trade', ],
     classifiers=[],
     install_requires=[
+        "certifi==2021.10.8",
+        "chardet",
         "requests",
         "beautifulsoup4",
         "rsa"

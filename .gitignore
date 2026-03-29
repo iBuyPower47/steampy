@@ -13,3 +13,4 @@ secrets
 *.maFile
 CLAUDE.md
 .claude
+.ace-tool/
