@@ -98,6 +98,7 @@ class LoginExecutor:
             'encrypted_password': encrypted_password,
             'account_name': self.username,
             'encryption_timestamp': rsa_timestamp,
+            'platform_type': '3',  # EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp
         }
 
     @staticmethod
