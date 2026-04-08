@@ -85,7 +85,7 @@ class SteamClient:
     @login_required
     def get_steam_id(self) -> int:
         url = SteamUrl.COMMUNITY_URL
-        response = self._session.get(url)
+        response = self._session.get(url, timeout=15)
         if steam_id := re.search(r'g_steamID = "(\d+)";', response.text):
             self.steamid = int(steam_id.group(1))
             return self.steamid
@@ -130,7 +130,7 @@ class SteamClient:
     def logout(self) -> None:
         url = f'{SteamUrl.STORE_URL}/login/logout/'
         data = {'sessionid': self._get_session_id()}
-        self._session.post(url, data=data)
+        self._session.post(url, data=data, timeout=15)
 
         if self.is_session_alive():
             raise Exception('Logout unsuccessful')
@@ -224,7 +224,7 @@ class SteamClient:
             self, method: str, interface: str, api_method: str, version: str, params: dict = None
     ) -> requests.Response:
         url = '/'.join((SteamUrl.API_URL, interface, api_method, version))
-        response = self._session.get(url, params=params) if method == 'GET' else self._session.post(url, data=params)
+        response = self._session.get(url, params=params, timeout=15) if method == 'GET' else self._session.post(url, data=params, timeout=15)
 
         if self.is_invalid_api_key(response):
             raise InvalidCredentials('Invalid API key')
@@ -247,7 +247,7 @@ class SteamClient:
         url = '/'.join((SteamUrl.COMMUNITY_URL, 'inventory', partner_steam_id, game.app_id, game.context_id))
         params = {'l': 'english', 'count': count}
 
-        response_dict = self._session.get(url, params=params).json()
+        response_dict = self._session.get(url, params=params, timeout=15).json()
         if response_dict is None or response_dict.get('success') != 1:
             raise ApiException('Success value should be 1.')
 
@@ -313,7 +313,7 @@ class SteamClient:
 
     @login_required
     def get_trade_receipt(self, trade_id: str):
-        html = self._session.get(f'https://steamcommunity.com/trade/{trade_id}/receipt').content.decode()
+        html = self._session.get(f'https://steamcommunity.com/trade/{trade_id}/receipt', timeout=15).content.decode()
         items = [json.loads(item) for item in texts_between(html, 'oItem = ', ';\r\n\toItem')]
         return items
 
@@ -346,7 +346,7 @@ class SteamClient:
 
     def _fetch_trade_partner_id(self, trade_offer_id: str) -> str:
         url = self._get_trade_offer_url(trade_offer_id)
-        offer_response_text = self._session.get(url).text
+        offer_response_text = self._session.get(url, timeout=15).text
 
         if 'You have logged in from a new device. In order to protect the items' in offer_response_text:
             raise SevenDaysHoldException("Account has logged in a new device and can't trade for 7 days")
@@ -361,12 +361,12 @@ class SteamClient:
 
     def decline_trade_offer(self, trade_offer_id: str) -> dict:
         url = f'https://steamcommunity.com/tradeoffer/{trade_offer_id}/decline'
-        response = self._session.post(url, data={'sessionid': self._get_session_id()}).json()
+        response = self._session.post(url, data={'sessionid': self._get_session_id()}, timeout=15).json()
         return response
 
     def cancel_trade_offer(self, trade_offer_id: str) -> dict:
         url = f'https://steamcommunity.com/tradeoffer/{trade_offer_id}/cancel'
-        response = self._session.post(url, data={'sessionid': self._get_session_id()}).json()
+        response = self._session.post(url, data={'sessionid': self._get_session_id()}, timeout=15).json()
         return response
 
     @login_required
@@ -392,7 +392,7 @@ class SteamClient:
             'Origin': SteamUrl.COMMUNITY_URL,
         }
 
-        response = self._session.post(url, data=params, headers=headers).json()
+        response = self._session.post(url, data=params, headers=headers, timeout=15).json()
         if response.get('needs_mobile_confirmation'):
             response.update(self._confirm_transaction(response['tradeofferid']))
 
@@ -414,7 +414,7 @@ class SteamClient:
             'Referer': f'{SteamUrl.COMMUNITY_URL}{urlparse.urlparse(trade_offer_url).path}',
             'Origin': SteamUrl.COMMUNITY_URL,
         }
-        response = self._session.get(trade_offer_url, headers=headers).text
+        response = self._session.get(trade_offer_url, headers=headers, timeout=15).text
 
         my_escrow_duration = int(text_between(response, 'var g_daysMyEscrow = ', ';'))
         their_escrow_duration = int(text_between(response, 'var g_daysTheirEscrow = ', ';'))
@@ -453,7 +453,7 @@ class SteamClient:
             'Origin': SteamUrl.COMMUNITY_URL,
         }
 
-        response = self._session.post(url, data=params, headers=headers).json()
+        response = self._session.post(url, data=params, headers=headers, timeout=15).json()
         if response.get('needs_mobile_confirmation'):
             response.update(self._confirm_transaction(response['tradeofferid']))
 
@@ -466,7 +466,7 @@ class SteamClient:
     @login_required
     # If convert_to_decimal = False, the price will be returned WITHOUT a decimal point.
     def get_wallet_balance(self, convert_to_decimal: bool = True, on_hold: bool = False) -> Union[str, Decimal]:
-        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market')
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', timeout=15)
         wallet_info_match = re.search(r'var g_rgWalletInfo = (.*?);', response.text)
         if wallet_info_match:
             balance_dict_str = wallet_info_match.group(1)

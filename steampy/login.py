@@ -26,9 +26,9 @@ class LoginExecutor:
         # All requests from the login page use the same 'Referer' and 'Origin' values
         headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/', 'Origin': SteamUrl.COMMUNITY_URL}
         if method.upper() == 'GET':
-            return self.session.get(url, params=params, headers=headers, timeout=30)
+            return self.session.get(url, params=params, headers=headers, timeout=15)
         elif method.upper() == 'POST':
-            return self.session.post(url, data=params, headers=headers, timeout=30)
+            return self.session.post(url, data=params, headers=headers, timeout=15)
         else:
             raise ValueError('Method must be either GET or POST')
 
@@ -71,7 +71,7 @@ class LoginExecutor:
             self.session.cookies.set(**store_cookie)
 
     def _fetch_rsa_params(self, current_number_of_repetitions: int = 0) -> dict:
-        self.session.get(SteamUrl.COMMUNITY_URL)
+        self.session.get(SteamUrl.COMMUNITY_URL, timeout=15)
         request_data = {'account_name': self.username}
         response = self._api_call('GET', 'IAuthenticationService', 'GetPasswordRSAPublicKey', params=request_data)
 
@@ -127,7 +127,7 @@ class LoginExecutor:
                 key: (None, str(value))
                 for key, value in pass_data['params'].items()
             }
-            self.session.post(pass_data['url'], files=multipart_fields)
+            self.session.post(pass_data['url'], files=multipart_fields, timeout=15)
 
     def _update_steam_guard(self, login_response: Response) -> None:
         client_id = login_response.json()['response']['client_id']
@@ -167,4 +167,4 @@ class LoginExecutor:
             'Referer': redir,
             'Origin': 'https://steamcommunity.com'
         }
-        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, files=files)
+        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, files=files, timeout=15)
