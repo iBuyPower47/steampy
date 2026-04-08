@@ -26,21 +26,18 @@ from steampy.utils import (
     get_key_value_from_url,
     ping_proxy,
     login_required,
-    check_error,
 )
 
 
 class SteamClient:
     def __init__(
             self,
-            api_key: str = None,
             username: str = None,
             password: str = None,
             steam_guard: str = None,
             login_cookies: dict = None,
             proxies: dict = None,
     ):
-        self._api_key = api_key
         self._session = requests.Session()
 
         if proxies:
@@ -259,9 +256,6 @@ class SteamClient:
     def _get_session_id(self) -> str:
         return self._session.cookies.get_dict("steamcommunity.com")['sessionid']
 
-    def get_trade_offers_summary(self) -> dict:
-        params = {'key': self._api_key}
-        return self.api_call('GET', 'IEconService', 'GetTradeOffersSummary', 'v1', params).json()
 
     def get_trade_offers(self, merge: bool = True, sent: int = 1, received: int = 1) -> dict:
         params = {
@@ -316,28 +310,6 @@ class SteamClient:
 
         return response
 
-    def get_trade_history(
-            self,
-            max_trades: int = 100,
-            start_after_time=None,
-            start_after_tradeid=None,
-            get_descriptions: bool = True,
-            navigating_back: bool = True,
-            include_failed: bool = True,
-            include_total: bool = True,
-    ) -> dict:
-        params = {
-            'key': self._api_key,
-            'max_trades': max_trades,
-            'start_after_time': start_after_time,
-            'start_after_tradeid': start_after_tradeid,
-            'get_descriptions': get_descriptions,
-            'navigating_back': navigating_back,
-            'include_failed': include_failed,
-            'include_total': include_total,
-        }
-        response = self.api_call('GET', 'IEconService', 'GetTradeHistory', 'v1', params).json()
-        return response
 
     @login_required
     def get_trade_receipt(self, trade_id: str):
@@ -426,17 +398,6 @@ class SteamClient:
 
         return response
 
-    def get_profile(self, steam_id: str) -> dict:
-        params = {'steamids': steam_id, 'key': self._api_key}
-        response = self.api_call('GET', 'ISteamUser', 'GetPlayerSummaries', 'v0002', params)
-        data = response.json()
-        return data['response']['players'][0]
-
-    def get_friend_list(self, steam_id: str, relationship_filter: str = 'all') -> dict:
-        params = {'key': self._api_key, 'steamid': steam_id, 'relationship': relationship_filter}
-        resp = self.api_call('GET', 'ISteamUser', 'GetFriendList', 'v1', params)
-        data = resp.json()
-        return data['friendslist']['friends']
 
     @staticmethod
     def _create_offer_dict(items_from_me: List[Asset], items_from_them: List[Asset]) -> dict:
