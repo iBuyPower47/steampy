@@ -164,10 +164,7 @@ class SteamMarket:
             data['confirmation'] = confirmation_id
             response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data,
                                           headers=headers, timeout=15).json()
-        if (success := response.get('success')) != 1:
-            raise ApiException(
-                f'There was a problem creating the order. Are you using the right currency? success: {success}'
-            )
+
         return response
 
     @login_required
