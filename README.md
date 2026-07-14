@@ -12,26 +12,29 @@ and SteamGuard file, or by passing sessionID and webCookie cookies.
 'steampy' is also capable of using proxies.
 `steampy` is developed with Python 3 using type hints and many other features its supported for Windows, Linux and MacOs.
 
+This repository is maintained as a fork at `https://github.com/iBuyPower47/steampy`.
+The original upstream project is `https://github.com/bukson/steampy`.
+
 Table of Content
 ================
 
-* [Installation](https://github.com/bukson/steampy#installation)
+* [Installation](#installation)
 
-* [Usage](https://github.com/bukson/steampy#usage)
+* [Usage](#usage)
 
-* [Examples](https://github.com/bukson/steampy#examples)
+* [Examples](#examples)
 
-* [SteamClient methods](https://github.com/bukson/steampy#steamclient-methods)
+* [SteamClient methods](#steamclient-methods)
 
-* [Market methods](https://github.com/bukson/steampy#market-methods)
+* [Market methods](#market-methods)
 
-* [Guard module functions](https://github.com/bukson/steampy#guard-module-functions)
+* [Guard module functions](#guard-module-functions)
 
-* [Utils methods](https://github.com/bukson/steampy#utils-methods)
+* [Utils methods](#utils-methods)
 
-* [Test](https://github.com/bukson/steampy#test)
+* [Test](#test)
 
-* [License](https://github.com/bukson/steampy#license)
+* [License](#license)
 
 
 Installation
@@ -465,7 +468,7 @@ market methods
 Some games are predefined in `GameOptions` class, such as `GameOptions.DOTA2`, `GameOptions.CS` and `GameOptions.TF2,
 but `GameOptions` object can be constructed with custom parameters.
 
-Currencies are defined in Currency class, [currently](https://github.com/bukson/steampy#currencies)
+Currencies are defined in Currency class, [currently](#currencies)
 
 Default currency is USD
 

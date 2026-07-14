@@ -151,6 +151,7 @@ class SteamMarket:
             'quantity': quantity,
         }
         headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
             'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
         }
 
@@ -186,6 +187,7 @@ class SteamMarket:
             'quantity': '1',
         }
         headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
             'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
         }
         response = self._session.post(
@@ -214,7 +216,10 @@ class SteamMarket:
     @login_required
     def cancel_buy_order(self, buy_order_id) -> dict:
         data = {'sessionid': self._session_id, 'buy_orderid': buy_order_id}
-        headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/market'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+            'Referer': f'{SteamUrl.COMMUNITY_URL}/market'
+        }
         response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/cancelbuyorder/', data, headers=headers, timeout=15).json()
 
         if (success := response.get('success')) != 1:

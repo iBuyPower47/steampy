@@ -10,8 +10,8 @@ import requests
 from urllib.parse import unquote
 from steampy import guard
 from steampy.confirmation import ConfirmationExecutor
-from steampy.exceptions import SevenDaysHoldException, ApiException
-from steampy.login import LoginExecutor, InvalidCredentials
+from steampy.exceptions import SevenDaysHoldException, ApiException, InvalidCredentials
+from steampy.login import LoginExecutor
 from steampy.market import SteamMarket
 from steampy.models import Asset, TradeOfferState, SteamUrl, GameOptions
 from steampy.utils import (
@@ -346,7 +346,10 @@ class SteamClient:
 
     def _fetch_trade_partner_id(self, trade_offer_id: str) -> str:
         url = self._get_trade_offer_url(trade_offer_id)
-        offer_response_text = self._session.get(url, timeout=15).text
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+        }
+        offer_response_text = self._session.get(url, headers=headers, timeout=15).text
 
         if 'You have logged in from a new device. In order to protect the items' in offer_response_text:
             raise SevenDaysHoldException("Account has logged in a new device and can't trade for 7 days")

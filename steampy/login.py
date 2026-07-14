@@ -1,15 +1,15 @@
 import time
 
 from http import HTTPStatus
-from base64 import b64encode
-
-from rsa import encrypt, PublicKey
+import base64
+import rsa
 from requests import Session, Response
+from protobufs.enums_pb2 import ESessionPersistence
+from protobufs.steammessages_auth.steamclient_pb2 import *
 
 from steampy import guard
 from steampy.models import SteamUrl
 from steampy.utils import create_cookie
-from steampy.exceptions import InvalidCredentials, CaptchaRequired, ApiException
 
 
 class LoginExecutor:
@@ -33,24 +33,35 @@ class LoginExecutor:
             raise ValueError('Method must be either GET or POST')
 
     def login(self) -> Session:
-        login_response = self._send_login_request()
-        if not login_response.json()['response']:
-            raise ApiException('No response received from Steam API. Please try again later.')
-        self._check_for_captcha(login_response)
-        self._update_steam_guard(login_response)
+        rsa_params = self._fetch_rsa_params_protobuf()
+        encrypted_password = self._encrypt_password_protobuf(rsa_params)
+        rsa_timestamp = rsa_params.timestamp
+        auth_session = self._begin_auth_session_protobuf(
+            encrypted_password=encrypted_password,
+            rsa_timestamp=rsa_timestamp,
+        )
+
+        self.one_time_code = guard.generate_one_time_code(self.shared_secret)
+        self._update_auth_session_protobuf(
+            client_id=auth_session.client_id,
+            steamid=auth_session.steamid,
+            code_type=EAuthSessionGuardType.k_EAuthSessionGuardType_DeviceCode,
+        )
+
+        session = self._poll_auth_session_status_protobuf(
+            client_id=auth_session.client_id,
+            request_id=auth_session.request_id,
+        )
+
+        self.refresh_token = session.refresh_token
         finalized_response = self._finalize_login()
         self._perform_redirects(finalized_response.json())
-        self.set_sessionid_cookies()
+        self.set_session_cookies()
+
         return self.session
 
-    def _send_login_request(self) -> Response:
-        rsa_params = self._fetch_rsa_params()
-        encrypted_password = self._encrypt_password(rsa_params)
-        rsa_timestamp = rsa_params['rsa_timestamp']
-        request_data = self._prepare_login_request_data(encrypted_password, rsa_timestamp)
-        return self._api_call('POST', 'IAuthenticationService', 'BeginAuthSessionViaCredentials', params=request_data)
 
-    def set_sessionid_cookies(self):
+    def set_session_cookies(self):
         community_domain = SteamUrl.COMMUNITY_URL[8:]
         store_domain = SteamUrl.STORE_URL[8:]
         community_cookie_dic = self.session.cookies.get_dict(domain=community_domain)
@@ -70,90 +81,86 @@ class LoginExecutor:
             self.session.cookies.set(**community_cookie)
             self.session.cookies.set(**store_cookie)
 
-    def _fetch_rsa_params(self, current_number_of_repetitions: int = 0) -> dict:
-        self.session.get(SteamUrl.COMMUNITY_URL, timeout=15)
-        request_data = {'account_name': self.username}
-        response = self._api_call('GET', 'IAuthenticationService', 'GetPasswordRSAPublicKey', params=request_data)
+    def _fetch_rsa_params_protobuf(self) -> CAuthentication_GetPasswordRSAPublicKey_Response:
+        self.session.get(SteamUrl.COMMUNITY_URL)
+        rsa_params = self._fetch_rsa_params_protobuf_api_call()
+        return rsa_params
 
-        if response.status_code == HTTPStatus.OK and 'response' in response.json():
-            key_data = response.json()['response']
-            # Steam may return an empty 'response' value even if the status is 200
-            if 'publickey_mod' in key_data and 'publickey_exp' in key_data and 'timestamp' in key_data:
-                rsa_mod = int(key_data['publickey_mod'], 16)
-                rsa_exp = int(key_data['publickey_exp'], 16)
-                return {'rsa_key': PublicKey(rsa_mod, rsa_exp), 'rsa_timestamp': key_data['timestamp']}
-
-        maximal_number_of_repetitions = 5
-        if current_number_of_repetitions < maximal_number_of_repetitions:
-            return self._fetch_rsa_params(current_number_of_repetitions + 1)
-
-        raise ApiException(f'Could not obtain rsa-key. Status code: {response.status_code}')
-
-    def _encrypt_password(self, rsa_params: dict) -> bytes:
-        return b64encode(encrypt(self.password.encode('utf-8'), rsa_params['rsa_key']))
-
-    def _prepare_login_request_data(self, encrypted_password: bytes, rsa_timestamp: str) -> dict:
-        return {
-            'persistence': '1',
-            'encrypted_password': encrypted_password,
-            'account_name': self.username,
-            'encryption_timestamp': rsa_timestamp,
-            'platform_type': '3',  # EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp
-        }
-
-    @staticmethod
-    def _check_for_captcha(login_response: Response) -> None:
-        if login_response.json().get('captcha_needed', False):
-            raise CaptchaRequired('Captcha required')
-
-    def _enter_steam_guard_if_necessary(self, login_response: Response) -> Response:
-        if login_response.json()['requires_twofactor']:
-            self.one_time_code = guard.generate_one_time_code(self.shared_secret)
-            return self._send_login_request()
-        return login_response
-
-    @staticmethod
-    def _assert_valid_credentials(login_response: Response) -> None:
-        if not login_response.json()['success']:
-            raise InvalidCredentials(login_response.json()['message'])
-
-    def _perform_redirects(self, response_dict: dict) -> None:
-        parameters = response_dict.get('transfer_info')
-        if parameters is None:
-            raise Exception('Cannot perform redirects after login, no parameters fetched')
-        for pass_data in parameters:
-            pass_data['params'].update({'steamID': response_dict['steamID']})
-            multipart_fields = {
-                key: (None, str(value))
-                for key, value in pass_data['params'].items()
-            }
-            self.session.post(pass_data['url'], files=multipart_fields, timeout=15)
-
-    def _update_steam_guard(self, login_response: Response) -> None:
-        client_id = login_response.json()['response']['client_id']
-        steamid = login_response.json()['response']['steamid']
-        request_id = login_response.json()['response']['request_id']
-        code_type = 3
-        code = guard.generate_one_time_code(self.shared_secret)
-
-        update_data = {'client_id': client_id, 'steamid': steamid, 'code_type': code_type, 'code': code}
+    def _fetch_rsa_params_protobuf_api_call(self) -> CAuthentication_GetPasswordRSAPublicKey_Response:
+        message = CAuthentication_GetPasswordRSAPublicKey_Request(account_name=self.username)
         response = self._api_call(
-            'POST', 'IAuthenticationService', 'UpdateAuthSessionWithSteamGuardCode', params=update_data
+            "GET", "IAuthenticationService", "GetPasswordRSAPublicKey", "v1",
+            {"input_protobuf_encoded": str(base64.b64encode(message.SerializeToString()), "utf8")}
         )
-        if response.status_code == HTTPStatus.OK:
-            self._pool_sessions_steam(client_id, request_id)
-        else:
-            raise Exception('Cannot update Steam guard')
+        return CAuthentication_GetPasswordRSAPublicKey_Response.FromString(response.content)
 
-    def _pool_sessions_steam(self, client_id: str, request_id: str) -> None:
-        pool_data = {'client_id': client_id, 'request_id': request_id}
-        for i in range(3):
-            try:
-                response = self._api_call('POST', 'IAuthenticationService', 'PollAuthSessionStatus', params=pool_data)
-                self.refresh_token = response.json()['response']['refresh_token']
-                break
-            except Exception as e:
-                time.sleep(5)
+    def _encrypt_password_protobuf(self, rsa_params: CAuthentication_GetPasswordRSAPublicKey_Response) -> str:
+        publickey_exp = int(rsa_params.publickey_exp, 16)  # type:ignore
+        publickey_mod = int(rsa_params.publickey_mod, 16)  # type:ignore
+        public_key = rsa.PublicKey(
+            n=publickey_mod,
+            e=publickey_exp,
+        )
+        encrypted_password = rsa.encrypt(
+            message=self.password.encode("utf-8"),
+            pub_key=public_key,
+        )
+        return str(base64.b64encode(encrypted_password), "utf8")
+
+    def _begin_auth_session_protobuf(
+            self,
+            encrypted_password: str,
+            rsa_timestamp: int,
+    ) -> CAuthentication_BeginAuthSessionViaCredentials_Response:
+        message = CAuthentication_BeginAuthSessionViaCredentials_Request(
+            account_name=self.username,
+            encrypted_password=encrypted_password,
+            encryption_timestamp=rsa_timestamp,
+            remember_login=True,
+            platform_type=EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp,
+            persistence=ESessionPersistence.k_ESessionPersistence_Persistent
+        )
+        response = self._api_call(
+            "POST", "IAuthenticationService", "BeginAuthSessionViaCredentials", "v1",
+            {"input_protobuf_encoded": str(base64.b64encode(message.SerializeToString()), "utf8")}
+        )
+        return CAuthentication_BeginAuthSessionViaCredentials_Response.FromString(response.content)
+
+    def _update_auth_session_protobuf(
+            self,
+            client_id: int,
+            steamid: int,
+            code_type: int,
+    ) -> Response:
+        message = CAuthentication_UpdateAuthSessionWithSteamGuardCode_Request(
+            client_id=client_id,
+            steamid=steamid,
+            code=self.one_time_code,
+            code_type=code_type,
+        )
+        resp = self._api_call(
+            "POST",
+            "IAuthenticationService",
+            "UpdateAuthSessionWithSteamGuardCode",
+            "v1",
+            {"input_protobuf_encoded": str(base64.b64encode(message.SerializeToString()), "utf8")},
+        )
+        return resp
+
+    def _poll_auth_session_status_protobuf(
+            self,
+            client_id: int,
+            request_id: bytes,
+    ) -> CAuthentication_PollAuthSessionStatus_Response:
+        message = CAuthentication_PollAuthSessionStatus_Request(
+            client_id=client_id,
+            request_id=request_id,
+        )
+        response = self._api_call(
+            "POST", "IAuthenticationService", "PollAuthSessionStatus", "v1",
+            {"input_protobuf_encoded": str(base64.b64encode(message.SerializeToString()), "utf8")}
+        )
+        return CAuthentication_PollAuthSessionStatus_Response.FromString(response.content)
 
     def _finalize_login(self) -> Response:
         sessionid = self.session.cookies['sessionid']
@@ -167,4 +174,17 @@ class LoginExecutor:
             'Referer': redir,
             'Origin': 'https://steamcommunity.com'
         }
-        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, files=files, timeout=15)
+        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, files=files,
+                                 timeout=15)
+
+    def _perform_redirects(self, response_dict: dict) -> None:
+        parameters = response_dict.get('transfer_info')
+        if parameters is None:
+            raise Exception('Cannot perform redirects after login, no parameters fetched')
+        for pass_data in parameters:
+            pass_data['params'].update({'steamID': response_dict['steamID']})
+            multipart_fields = {
+                key: (None, str(value))
+                for key, value in pass_data['params'].items()
+            }
+            self.session.post(pass_data['url'], files=multipart_fields, timeout=15)
