@@ -64,7 +64,11 @@ class SteamMarket:
 
     @login_required
     def get_my_market_listings(self) -> dict:
-        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', timeout=15)
+        headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+        }
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', headers=headers, timeout=15)
         if response.status_code != HTTPStatus.OK:
             raise ApiException(f'There was a problem getting the listings. HTTP code: {response.status_code}')
 
@@ -151,6 +155,7 @@ class SteamMarket:
             'quantity': quantity,
         }
         headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
             'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
         }
@@ -187,6 +192,7 @@ class SteamMarket:
             'quantity': '1',
         }
         headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
             'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
         }
@@ -206,7 +212,11 @@ class SteamMarket:
     @login_required
     def cancel_sell_order(self, sell_listing_id: str) -> None:
         data = {'sessionid': self._session_id}
-        headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/market/'}
+        headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+            'Referer': f'{SteamUrl.COMMUNITY_URL}/market'
+        }
         url = f'{SteamUrl.COMMUNITY_URL}/market/removelisting/{sell_listing_id}'
 
         response = self._session.post(url, data=data, headers=headers, timeout=15)
@@ -217,6 +227,7 @@ class SteamMarket:
     def cancel_buy_order(self, buy_order_id) -> dict:
         data = {'sessionid': self._session_id, 'buy_orderid': buy_order_id}
         headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
             'Referer': f'{SteamUrl.COMMUNITY_URL}/market'
         }
@@ -234,6 +245,10 @@ class SteamMarket:
         return con_executor.confirm_sell_listing(asset_id)
 
     def get_my_buy_order(self):
-        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', timeout=15)
+        headers = {
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+        }
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', headers=headers timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
         return get_buy_orders_from_node(soup)

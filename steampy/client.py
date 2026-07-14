@@ -347,7 +347,8 @@ class SteamClient:
     def _fetch_trade_partner_id(self, trade_offer_id: str) -> str:
         url = self._get_trade_offer_url(trade_offer_id)
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
         }
         offer_response_text = self._session.get(url, headers=headers, timeout=15).text
 
