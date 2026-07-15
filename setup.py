@@ -4,7 +4,7 @@ import sys
 if sys.version_info < (3, 8):
     sys.exit('Python < 3.8 is not supported')
 
-version = '1.1.2'
+version = '1.1.3'
 repository_url = 'https://github.com/iBuyPower47/steampy'
 
 setup(
