@@ -1,6 +1,5 @@
 import json
 import urllib.parse
-from asyncio import timeout
 from decimal import Decimal
 from http import HTTPStatus
 
@@ -33,6 +32,9 @@ class SteamMarket:
         self._steam_id = steam_id
         self._session_id = session_id
         self.was_login_executed = True
+        self.confirmation_executor = ConfirmationExecutor(
+            self._steam_guard['identity_secret'], self._steam_id, self._session,
+        )
 
     def fetch_price(
             self, item_hash_name: str, game: GameOptions, currency: Currency = Currency.USD, country='PL'
@@ -64,11 +66,7 @@ class SteamMarket:
 
     @login_required
     def get_my_market_listings(self) -> dict:
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
-        }
-        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', headers=headers, timeout=15)
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', timeout=15)
         if response.status_code != HTTPStatus.OK:
             raise ApiException(f'There was a problem getting the listings. HTTP code: {response.status_code}')
 
@@ -128,9 +126,9 @@ class SteamMarket:
             'amount': 1,
             'price': money_to_receive,
         }
-        headers = {'Referer': f'{SteamUrl.COMMUNITY_URL}/profiles/{self._steam_id}/inventory'}
+        self._session.headers['Referer'] = f'{SteamUrl.COMMUNITY_URL}/profiles/{self._steam_id}/inventory'
 
-        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/sellitem/', data, headers=headers, timeout=15).json()
+        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/sellitem/', data, timeout=15).json()
         has_pending_confirmation = 'pending confirmation' in response.get('message', '')
         if response.get('needs_mobile_confirmation') or (not response.get('success') and has_pending_confirmation):
             return self._confirm_sell_listing(assetid)
@@ -154,22 +152,15 @@ class SteamMarket:
             'price_total': str(Decimal(price_single_item) * Decimal(quantity)),
             'quantity': quantity,
         }
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-            'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
-        }
 
-        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data, headers=headers, timeout=15).json()
+        self._session.headers['Referer'] = f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
+
+        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data, timeout=15).json()
         if response.get('need_confirmation'):
             confirmation_id = response['confirmation']['confirmation_id']
-            confirmation_executor = ConfirmationExecutor(
-                self._steam_guard['identity_secret'], self._steam_id, self._session,
-            )
-            confirmation_executor.send_buy_allow_request(confirmation_id)
+            self.confirmation_executor.send_buy_allow_request(confirmation_id)
             data['confirmation'] = confirmation_id
-            response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data,
-                                          headers=headers, timeout=15).json()
+            response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/createbuyorder/', data, timeout=15).json()
 
         return response
 
@@ -191,47 +182,33 @@ class SteamMarket:
             'total': price,
             'quantity': '1',
         }
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-            'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
-        }
+        self._session.headers['Referer'] = f'{SteamUrl.COMMUNITY_URL}/market/listings/{game.app_id}/{urllib.parse.quote(market_name)}'
+
         response = self._session.post(
-            f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, headers=headers, timeout=15).json()
+            f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, timeout=15).json()
         if response.get('need_confirmation'):
             confirmation_id = response['confirmation']['confirmation_id']
-            confirmation_executor = ConfirmationExecutor(
-                self._steam_guard['identity_secret'], self._steam_id, self._session,
-            )
-            confirmation_executor.send_buy_allow_request(confirmation_id)
+            self.confirmation_executor.send_buy_allow_request(confirmation_id)
             data['confirmation'] = confirmation_id
             response = self._session.post(
-                f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, headers=headers, timeout=15).json()
+                f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}', data, timeout=15).json()
         return response
 
     @login_required
     def cancel_sell_order(self, sell_listing_id: str) -> None:
         data = {'sessionid': self._session_id}
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-            'Referer': f'{SteamUrl.COMMUNITY_URL}/market'
-        }
+        self._session.headers['Referer'] = f'{SteamUrl.COMMUNITY_URL}/market'
         url = f'{SteamUrl.COMMUNITY_URL}/market/removelisting/{sell_listing_id}'
 
-        response = self._session.post(url, data=data, headers=headers, timeout=15)
+        response = self._session.post(url, data=data, timeout=15)
         if response.status_code != HTTPStatus.OK:
             raise ApiException(f'There was a problem removing the listing. HTTP code: {response.status_code}')
 
     @login_required
     def cancel_buy_order(self, buy_order_id) -> dict:
         data = {'sessionid': self._session_id, 'buy_orderid': buy_order_id}
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-            'Referer': f'{SteamUrl.COMMUNITY_URL}/market'
-        }
-        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/cancelbuyorder/', data, headers=headers, timeout=15).json()
+        self._session.headers['Referer'] = f'{SteamUrl.COMMUNITY_URL}/market'
+        response = self._session.post(f'{SteamUrl.COMMUNITY_URL}/market/cancelbuyorder/', data, timeout=15).json()
 
         if (success := response.get('success')) != 1:
             raise ApiException(f'There was a problem canceling the order. success: {success}')
@@ -239,16 +216,9 @@ class SteamMarket:
         return response
 
     def _confirm_sell_listing(self, asset_id: str) -> dict:
-        con_executor = ConfirmationExecutor(
-            self._steam_guard['identity_secret'], self._steam_id, self._session
-        )
-        return con_executor.confirm_sell_listing(asset_id)
+        return self.confirmation_executor.confirm_sell_listing(asset_id)
 
     def get_my_buy_order(self):
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
-        }
-        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', headers=headers timeout=15)
+        response = self._session.get(f'{SteamUrl.COMMUNITY_URL}/market', timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
         return get_buy_orders_from_node(soup)

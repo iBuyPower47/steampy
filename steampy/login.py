@@ -1,6 +1,3 @@
-import time
-
-from http import HTTPStatus
 import base64
 import rsa
 from requests import Session, Response

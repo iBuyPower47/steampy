@@ -88,7 +88,10 @@ class ConfirmationExecutor:
     def _fetch_confirmations_page(self) -> requests.Response:
         tag = Tag.CONF.value
         params = self._create_confirmation_params(tag)
-        headers = {'X-Requested-With': 'com.valvesoftware.android.steam.community'}
+        headers = {
+            'User-Agent': 'okhttp/4.9.2',
+            'X-Requested-With': 'com.valvesoftware.android.steam.community'
+        }
         response = self._session.get(f'{self.CONF_URL}/getlist', params=params, headers=headers, timeout=15)
         if 'Steam Guard Mobile Authenticator is providing incorrect Steam Guard codes.' in response.text:
             raise InvalidCredentials('Invalid Steam Guard file')

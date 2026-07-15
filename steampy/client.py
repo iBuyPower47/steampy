@@ -39,6 +39,11 @@ class SteamClient:
             proxies: dict = None,
     ):
         self._session = requests.Session()
+        self._session.headers.update({
+            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+        })
 
         if proxies:
             self.set_proxies(proxies)
@@ -346,11 +351,7 @@ class SteamClient:
 
     def _fetch_trade_partner_id(self, trade_offer_id: str) -> str:
         url = self._get_trade_offer_url(trade_offer_id)
-        headers = {
-            'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
-        }
-        offer_response_text = self._session.get(url, headers=headers, timeout=15).text
+        offer_response_text = self._session.get(url, timeout=15).text
 
         if 'You have logged in from a new device. In order to protect the items' in offer_response_text:
             raise SevenDaysHoldException("Account has logged in a new device and can't trade for 7 days")
