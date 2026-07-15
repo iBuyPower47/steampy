@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "steampy"
+version = "1.1.3"
+description = "A Steam lib for trade automation"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Michał Bukowski", email = "gigibukson@gmail.com" },
+]
+keywords = ["steam", "trade"]
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "rsa",
+    "protobuf>=3.20.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/iBuyPower47/steampy"
+Source = "https://github.com/iBuyPower47/steampy"
+"Original Upstream" = "https://github.com/bukson/steampy"
+Download = "https://github.com/iBuyPower47/steampy/tarball/1.1.3"
+
+[tool.setuptools.packages.find]
+include = [
+    "steampy",
+    "steampy.*",
+    "protobufs",
+    "protobufs.*",
+    "test",
+    "test.*",
+    "examples",
+    "examples.*",
+]
