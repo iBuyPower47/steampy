@@ -61,7 +61,10 @@ class ConfirmationExecutor:
         params['op'] = (tag.value,)
         params['cid'] = confirmation.data_confid
         params['ck'] = confirmation.nonce
-        headers = {'X-Requested-With': 'XMLHttpRequest'}
+        headers = {
+            'User-Agent': 'okhttp/4.9.2',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
         return self._session.get(f'{self.CONF_URL}/ajaxop', params=params, headers=headers, timeout=15).json()
 
     def _get_confirmations(self) -> List[Confirmation]:
